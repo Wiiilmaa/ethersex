@@ -83,8 +83,10 @@ static const char PROGMEM get_string_foot[] =
     "Host: " CONF_WATCHASYNC_SERVICE "\r\n\r\n";
 
 static struct WatchAsyncBuffer wa_buffer[CONF_WATCHASYNC_BUFFERSIZE]; // Ringbuffer for Messages
+#ifndef CONF_WATCHASYNC_HIGHVOLUME
 static uint8_t wa_buffer_left = 0; 	// last position sent
 static uint8_t wa_buffer_right = 0; 	// last position set
+#endif
 
 static uint8_t wa_portstate = 0; 		// Last portstate saved
 static uint8_t wa_sendstate = 0; 		// 0: Idle, 1: Message being sent, 2: Sending message failed
@@ -224,7 +226,11 @@ static void watchasync_dns_query_cb(char *name, uip_ipaddr_t *ipaddr)  // Callba
     wa_sendstate = 0;
 #endif
   } else {
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+    wa_sendstate = 0;  // if no connection initiated, set state to Retry
+#else
     wa_sendstate = 2;  // if no connection initiated, set state to Retry
+#endif
   }
 }
 
@@ -255,6 +261,20 @@ void watchasync_mainloop(void)  // Mainloop routine poll ringsbuffer
 {
   if (wa_sendstate != 1) // not busy sending 
   {
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+    uint8_t temp = clock_get_time() % CONF_WATCHASYNC_BUFFERSIZE;
+    for (uint8_t buf = temp + 1 % CONF_WATCHASYNC_BUFFERSIZE; buf != temp; buf = (buf+1) % CONF_WATCHASYNC_BUFFERSIZE)
+    {
+      for (uint8_t pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)
+      {
+        if (wa_buffer[buf].pin[pin] != 0)  // is there any data?
+        {
+          sendmessage();  // send the data found
+	  return;
+        }
+      }
+    }
+#else 
     if (wa_sendstate == 2) // Message not sent successfully
     {
       WATCHASYNC_DEBUG ("Error, again please...\n"); 
@@ -268,6 +288,7 @@ void watchasync_mainloop(void)  // Mainloop routine poll ringsbuffer
 	sendmessage();  // send the new event
       }
     }
+#endif
   }  
 }
 

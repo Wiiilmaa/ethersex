@@ -27,7 +27,9 @@
 struct watchasync_connection_state_t {
   uint8_t state;
 #ifdef CONF_WATCHASYNC_HIGHVOLUME
+#ifdef CONF_WATCHASYNC_INCLUDE_TIMESTAMP
   uint32_t timestamp;
+#endif
   uint8_t pin[CONF_WATCHASYNC_PINS];
 #endif
 };
