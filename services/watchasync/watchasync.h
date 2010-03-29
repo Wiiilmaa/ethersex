@@ -40,9 +40,13 @@ enum WatchAsyncConnStates {
 
 // Buffer for storing events of interrupt-routine
 struct WatchAsyncBuffer {
-  uint8_t pin;
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+  uint8_t pin[CONF_WATCHASYNC_PINS];
+#else
 #ifdef CONF_WATCHASYNC_INCLUDE_TIMESTAMP
   uint32_t timestamp;
+#endif
+  uint8_t pin;
 #endif
 };
 

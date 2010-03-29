@@ -7,7 +7,9 @@ dep_bool_menu "watchasync service (EXPERIMENTAL)" WATCHASYNC_SUPPORT $TCP_SUPPOR
   bool "Include uuid" CONF_WATCHASYNC_INCLUDE_UUID
     string "UUID" CONF_WATCHASYNC_UUID "12345678-9ABC-DEF0-1234-56789ABCDEF0" $CONF_HTTPLOG_INCLUDE_UUID
       script_set "  Randomize UUID" RANDOM_UUIDC "scripts/random_uuid CONF_WATCHASYNC_UUID"
+  int "Number of pins to watch" CONF_WATCHASYNC_PINS 8
   int "Buffersize" CONF_WATCHASYNC_BUFFERSIZE 64
+  bool "High Volume" CONF_WATCHASYNC_HIGHVOLUME
   comment  "Debugging Flags"
     dep_bool 'WATCHASYNC' DEBUG_WATCHASYNC $DEBUG $WATCHASYNC_SUPPORT
 endmenu

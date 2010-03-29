@@ -49,11 +49,19 @@
 
 // first string is the GET part including the path
 static const char PROGMEM get_string_head[] =
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+    "GET " CONF_WATCHASYNC_PATH "?hivol=1";
+#else
     "GET " CONF_WATCHASYNC_PATH "?port=";
+#endif
 // next is the - optional - inclusion of the machine identifier uuid
 #ifdef CONF_WATCHASYNC_INCLUDE_PREFIX
 static const char PROGMEM prefix_string[] =
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+	"&pre=" CONF_WATCHASYNC_PREFIX ;
+#else
 	CONF_WATCHASYNC_PREFIX ;
+#endif
 #endif
 // optional uuid
 #ifdef CONF_WATCHASYNC_INCLUDE_UUID
@@ -64,6 +72,10 @@ static const char PROGMEM uuid_string[] =
 #ifdef CONF_WATCHASYNC_INCLUDE_TIMESTAMP
 static const char PROGMEM time_string[] =
 	"&time=";
+#endif
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+static const char PROGMEM sum_string[] =
+	"&sum%u=%u";
 #endif
 // and the http footer including the http protocol version and the server name
 static const char PROGMEM get_string_foot[] =
@@ -82,13 +94,18 @@ ISR(PCINT2_vect)
 {
   uint8_t portcompstate = (PINC ^ wa_portstate); //  compare actual state of PortC with last saved state
   uint8_t pin;	// loop variable for for-loop
+#ifndef CONF_WATCHASYNC_HIGHVOLUME
   uint8_t tempright;  // temporary pointer for detecting full buffer
+#endif
   while (portcompstate)  // repeat comparison as long as there are changes to the PortC
   {
-    for (pin = 0; pin < 8; pin ++)  // iterate through pins
+    for (pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)  // iterate through pins
     {
       if (portcompstate & wa_portstate & (1 << pin)) // bit changed from 1 to 0
       {
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+        wa_buffer[clock_get_time() % CONF_WATCHASYNC_BUFFERSIZE].pin[pin] ++;
+#else
         tempright = ((wa_buffer_right + 1) % CONF_WATCHASYNC_BUFFERSIZE);  // calculate next position in ringbuffer
 	if (tempright != wa_buffer_left)  // if ringbuffer not full
 	{
@@ -100,6 +117,7 @@ ISR(PCINT2_vect)
 //	} else {  // ringbuffer is full... discard event
 //	  WATCHASYNC_DEBUG ("Buffer full, discarding message!\n");
 	}
+#endif
       }
     }
     wa_portstate ^= portcompstate;  // incorporate changes processed in current state
@@ -109,36 +127,48 @@ ISR(PCINT2_vect)
 
 static void watchasync_net_main(void)  // Network-routine called by networkstack 
 {
-  if (uip_aborted() || uip_timedout()) // Connection aborted or timedout
+  if (uip_aborted() || uip_timedout() || uip_closed() ) // Connection aborted or timedout
   {
     // if connectionstate is new, we have to resend the packet, otherwise just ignore the event
     if (uip_conn->appstate.watchasync.state == WATCHASYNC_CONNSTATE_NEW)
     {
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+      uint8_t buf = uip_conn->appstate.watchasync.timestamp % CONF_WATCHASYNC_BUFFERSIZE;
+      for (uint8_t pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)
+      {
+        wa_buffer[buf].pin[pin] += uip_conn->appstate.watchasync.pin[pin];
+      }
+#else
       wa_sendstate = 2; // Ignore aborted, if already closed
+#endif
       uip_conn->appstate.watchasync.state = WATCHASYNC_CONNSTATE_OLD;
       WATCHASYNC_DEBUG ("connection aborted\n");
       return;
-    }
-  }
-
-  if (uip_closed()) // Closed connection does not expect any respond from us, resend if connnectionstate is new
-  {
-    if (uip_conn->appstate.watchasync.state == WATCHASYNC_CONNSTATE_NEW)
-    {
-      wa_sendstate = 2; // Ignore aborted, if already closed
-      uip_conn->appstate.watchasync.state = WATCHASYNC_CONNSTATE_OLD;
-      WATCHASYNC_DEBUG ("new connection closed\n");
-    } else {
+    } else if (uip_closed()) {
       WATCHASYNC_DEBUG ("connection closed\n");
     }
-    return;
   }
-
 
   if (uip_connected() || uip_rexmit()) { // (re-)transmit packet
     WATCHASYNC_DEBUG ("new connection or rexmit, sending message\n");
     char *p = uip_appdata;  // pointer set to uip_appdata, used to store string
     p += sprintf_P(p, get_string_head);  // Copy Header from programm memory to appdata
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+#ifdef CONF_WATCHASYNC_INCLUDE_PREFIX
+    p += sprintf_P(p, prefix_string);  // Append Prefixstring if configured
+#endif
+#ifdef CONF_WATCHASYNC_INCLUDE_UUID
+    p += sprintf_P(p, uuid_string);  // append uuid if configured
+#endif
+#ifdef CONF_WATCHASYNC_INCLUDE_TIMESTAMP  
+    p += sprintf_P(p, time_string);  // append timestamp attribute
+    p += sprintf(p, "%lu", uip_conn->appstate.watchasync.timestamp); // and timestamp value
+#endif
+    for (uint8_t pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)
+    {
+      p += sprintf_P(p, sum_string, pin, uip_conn->appstate.watchasync.pin[pin]);
+    }
+#else
 #ifdef CONF_WATCHASYNC_INCLUDE_PREFIX
     p += sprintf_P(p, prefix_string);  // Append Prefixstring if configured
 #endif
@@ -149,6 +179,7 @@ static void watchasync_net_main(void)  // Network-routine called by networkstack
 #ifdef CONF_WATCHASYNC_INCLUDE_TIMESTAMP  
     p += sprintf_P(p, time_string);  // append timestamp attribute
     p += sprintf(p, "%lu", wa_buffer[wa_buffer_left].timestamp); // and timestamp value
+#endif
 #endif
     p += sprintf_P(p, get_string_foot); // appen tail of packet from programmmemory
 //    uip_udp_send(p - (char *)uip_appdata);
@@ -161,7 +192,9 @@ static void watchasync_net_main(void)  // Network-routine called by networkstack
   {
     if (uip_conn->appstate.watchasync.state == WATCHASYNC_CONNSTATE_NEW) // If packet is still new
     {
+#ifndef CONF_WATCHASYNC_HIGHVOLUME
       wa_sendstate = 0;  // Mark event as sent, go ahead in buffer
+#endif
       uip_conn->appstate.watchasync.state = WATCHASYNC_CONNSTATE_OLD; // mark this packet as old, do noch resend it
       uip_close();  // initiate closing of the connection
       WATCHASYNC_DEBUG ("packet sent, closing\n");
@@ -180,6 +213,16 @@ static void watchasync_dns_query_cb(char *name, uip_ipaddr_t *ipaddr)  // Callba
   if(conn)  // if connection succesfully created
   {
     conn->appstate.watchasync.state = WATCHASYNC_CONNSTATE_NEW; // Set connection state to new, as data still has to be send
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+    conn->appstate.watchasync.timestamp = (clock_get_time() & (uint32_t) (-1 * CONF_WATCHASYNC_BUFFERSIZE)) + wa_buffer_left;
+    if (conn->appstate.watchasync.timestamp > clock_get_time() ) conn->appstate.watchasync.timestamp -= CONF_WATCHASYNC_BUFFERSIZE;
+    for (uint8_t pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)
+    {
+      conn->appstate.watchasync.pin[pin] = wa_buffer[wa_buffer_left].pin[pin];
+      wa_buffer[wa_buffer_left].pin[pin] -= conn->appstate.watchasync.pin[pin];
+    }
+    wa_sendstate = 0;
+#endif
   } else {
     wa_sendstate = 2;  // if no connection initiated, set state to Retry
   }

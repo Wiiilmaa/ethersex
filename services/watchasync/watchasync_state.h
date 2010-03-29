@@ -26,6 +26,10 @@
 // State of coonection, new until acked or aborted, after that old
 struct watchasync_connection_state_t {
   uint8_t state;
+#ifdef CONF_WATCHASYNC_HIGHVOLUME
+  uint32_t timestamp;
+  uint8_t pin[CONF_WATCHASYNC_PINS];
+#endif
 };
 
 #endif /* WATCHASYNC_STATE_H */
