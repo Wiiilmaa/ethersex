@@ -86,6 +86,8 @@ static struct WatchAsyncBuffer wa_buffer[CONF_WATCHASYNC_BUFFERSIZE]; // Ringbuf
 #ifndef CONF_WATCHASYNC_HIGHVOLUME
 static uint8_t wa_buffer_left = 0; 	// last position sent
 static uint8_t wa_buffer_right = 0; 	// last position set
+#else
+static uint8_t buf;  // bufferposition to send
 #endif
 
 static uint8_t wa_portstate = 0; 		// Last portstate saved
@@ -216,12 +218,12 @@ static void watchasync_dns_query_cb(char *name, uip_ipaddr_t *ipaddr)  // Callba
   {
     conn->appstate.watchasync.state = WATCHASYNC_CONNSTATE_NEW; // Set connection state to new, as data still has to be send
 #ifdef CONF_WATCHASYNC_HIGHVOLUME
-    conn->appstate.watchasync.timestamp = (clock_get_time() & (uint32_t) (-1 * CONF_WATCHASYNC_BUFFERSIZE)) + wa_buffer_left;
+    conn->appstate.watchasync.timestamp = (clock_get_time() & (uint32_t) (-1 * CONF_WATCHASYNC_BUFFERSIZE)) + buf;
     if (conn->appstate.watchasync.timestamp > clock_get_time() ) conn->appstate.watchasync.timestamp -= CONF_WATCHASYNC_BUFFERSIZE;
     for (uint8_t pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)
     {
-      conn->appstate.watchasync.pin[pin] = wa_buffer[wa_buffer_left].pin[pin];
-      wa_buffer[wa_buffer_left].pin[pin] -= conn->appstate.watchasync.pin[pin];
+      conn->appstate.watchasync.pin[pin] = wa_buffer[buf].pin[pin];
+      wa_buffer[buf].pin[pin] -= conn->appstate.watchasync.pin[pin];
     }
     wa_sendstate = 0;
 #endif
@@ -263,7 +265,7 @@ void watchasync_mainloop(void)  // Mainloop routine poll ringsbuffer
   {
 #ifdef CONF_WATCHASYNC_HIGHVOLUME
     uint8_t temp = clock_get_time() % CONF_WATCHASYNC_BUFFERSIZE;
-    for (uint8_t buf = temp + 1 % CONF_WATCHASYNC_BUFFERSIZE; buf != temp; buf = (buf+1) % CONF_WATCHASYNC_BUFFERSIZE)
+    for (buf = temp + 1 % CONF_WATCHASYNC_BUFFERSIZE; buf != temp; buf = (buf+1) % CONF_WATCHASYNC_BUFFERSIZE)
     {
       for (uint8_t pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)
       {
