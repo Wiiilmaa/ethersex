@@ -98,9 +98,7 @@ ISR(PCINT2_vect)
 {
   uint8_t portcompstate = (PINC ^ wa_portstate); //  compare actual state of PortC with last saved state
   uint8_t pin;	// loop variable for for-loop
-#ifndef CONF_WATCHASYNC_HIGHVOLUME
   uint8_t tempright;  // temporary pointer for detecting full buffer
-#endif
   while (portcompstate)  // repeat comparison as long as there are changes to the PortC
   {
     for (pin = 0; pin < CONF_WATCHASYNC_PINS; pin ++)  // iterate through pins
@@ -108,7 +106,13 @@ ISR(PCINT2_vect)
       if (portcompstate & wa_portstate & (1 << pin)) // bit changed from 1 to 0
       {
 #ifdef CONF_WATCHASYNC_HIGHVOLUME
-        wa_buffer[clock_get_time() % CONF_WATCHASYNC_BUFFERSIZE].pin[pin] ++;
+        tempright = clock_get_time() % CONF_WATCHASYNC_BUFFERSIZE;
+        if (wa_buffer[tempright] != -1)
+        {
+          wa_buffer[tempright].pin[pin] ++;
+//      } else {  // ringbuffer is full... discard event
+//        WATCHASYNC_DEBUG ("Buffer full, discarding message!\n");
+        }
 #else
         tempright = ((wa_buffer_right + 1) % CONF_WATCHASYNC_BUFFERSIZE);  // calculate next position in ringbuffer
 	if (tempright != wa_buffer_left)  // if ringbuffer not full

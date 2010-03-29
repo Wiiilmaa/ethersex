@@ -30,7 +30,15 @@ struct watchasync_connection_state_t {
 #ifdef CONF_WATCHASYNC_INCLUDE_TIMESTAMP
   uint32_t timestamp;
 #endif
+#ifdef WATCHASYNC_32BITS
+  uint32_t pin[CONF_WATCHASYNC_PINS];
+#else
+#ifdef WATCHASYNC_16BITS
+  uint16_t pin[CONF_WATCHASYNC_PINS];
+#else
   uint8_t pin[CONF_WATCHASYNC_PINS];
+#endif
+#endif 
 #endif
 };
 
